@@ -1,0 +1,57 @@
+name: Build and Publish SSM Docker
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.18'
+
+      - name: Install dependencies
+        run: go install
+
+      - name: Build
+        run: |
+          GOOS=windows GOARCH=amd64 go build -o ssmdocker.exe
+          GOOS=darwin GOARCH=amd64 go build -o ssmdocker-amd64-darwin
+          GOOS=linux GOARCH=amd64 go build -o ssmdocker-linux
+
+      - name: Test
+        run: go test -v ./...
+
+      - name: Release
+        run: |
+          git tag v0.1.0
+          
+          git remote show origin
+          
+          git push origin v0.1.0 --force
+          
+          release_id=`curl -L \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}"\
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/alqh/ssm-param-docker/releases/tags/v0.1.0 | jq -r '.id'`
+          
+          echo "release id: ${release_id}"
+          
+          for app in ssmdocker.exe ssmdocker-amd64-darwin ssmdocker-linux
+          do
+            curl -L \
+              -X POST \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}"\
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              -H "Content-Type: application/octet-stream" \
+              https://uploads.github.com/repos/alqh/ssm-param-docker/releases/${release_id}/assets?name=$app \
+              --data-binary "@$app"
+          done
